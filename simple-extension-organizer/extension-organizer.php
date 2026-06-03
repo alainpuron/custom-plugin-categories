@@ -1,9 +1,11 @@
 <?php
 /**
- * Plugin Name: Simple Plugin Organizer
- * Description: Organize your plugins into custom categories directly on the plugins page with drag-and-drop ordering.
+ * Plugin Name: Extension Organizer
+ * Description: Organize your extensions and add-ons into custom categories directly on the admin page.
  * Version: 3.0
  * Author: Alain Puron
+ * License: GPLv2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

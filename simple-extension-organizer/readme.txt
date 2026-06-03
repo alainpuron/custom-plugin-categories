@@ -1,12 +1,13 @@
-=== Simple Plugin Organizer ===
-Tags: plugins, admin, organization, categories
+=== Extension Organizer ===
+Contributors: apuron
+Tags: admin, organization, categories
 Requires at least: 6.0
-Tested up to: 6.5
-Stable tag: 1.0
+Tested up to: 7.0
+Stable tag: 3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Organize your plugins into custom categories directly on the plugins page with drag-and-drop ordering.
+Organize your add-ons into custom categories directly on the admin page with drag-and-drop ordering.
 
 == Description ==
 
