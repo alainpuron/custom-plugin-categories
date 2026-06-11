@@ -12,10 +12,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-class Simple_Plugin_Organizer {
+class EXT_OR_Simple_Plugin_Organizer {
 
-    private $categories_option = 'spo_categories';
-    private $plugin_cats_option = 'spo_plugin_cats';
+    private $categories_option = 'ext_or_categories';
+    private $plugin_cats_option = 'ext_or_plugin_cats';
 
     public function __construct() {
         add_filter( 'manage_plugins_columns', array( $this, 'add_category_column' ) );
@@ -27,15 +27,15 @@ class Simple_Plugin_Organizer {
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_plugin_category_script' ) );
 
         // AJAX endpoints
-        add_action( 'wp_ajax_spo_add_category', array( $this, 'ajax_add_category' ) );
-        add_action( 'wp_ajax_spo_edit_category', array( $this, 'ajax_edit_category' ) );
-        add_action( 'wp_ajax_spo_delete_category', array( $this, 'ajax_delete_category' ) );
-        add_action( 'wp_ajax_spo_assign_plugin', array( $this, 'ajax_assign_plugin' ) );
-        add_action( 'wp_ajax_spo_reorder_categories', array( $this, 'ajax_reorder_categories' ) ); // New Sort Endpoint
+        add_action( 'wp_ajax_ext_or_add_category', array( $this, 'ajax_add_category' ) );
+        add_action( 'wp_ajax_ext_or_edit_category', array( $this, 'ajax_edit_category' ) );
+        add_action( 'wp_ajax_ext_or_delete_category', array( $this, 'ajax_delete_category' ) );
+        add_action( 'wp_ajax_ext_or_assign_plugin', array( $this, 'ajax_assign_plugin' ) );
+        add_action( 'wp_ajax_ext_or_reorder_categories', array( $this, 'ajax_reorder_categories' ) );
     }
 
     public function add_category_column( $columns ) {
-        $columns['plugin_category'] = 'Category';
+        $columns['plugin_category'] = esc_html__( 'Category', 'extension-organizer' );
         return $columns;
     }
 
@@ -48,10 +48,11 @@ class Simple_Plugin_Organizer {
             $cat_name = ( $current_cat_id && isset( $categories[$current_cat_id] ) ) ? $categories[$current_cat_id] : 'Uncategorized';
 
             echo '<select class="spo-inline-assign" data-plugin="' . esc_attr($plugin_file) . '">';
-            echo '<option value="">Uncategorized</option>';
+            echo '<option value="">' . esc_html__( 'Uncategorized', 'extension-organizer' ) . '</option>';
             foreach ( $categories as $id => $name ) {
-                $selected = selected( $current_cat_id, $id, false );
-                echo '<option value="' . esc_attr($id) . '" ' . $selected . '>' . esc_html($name) . '</option>';
+                echo '<option value="' . esc_attr($id) . '"';
+                selected( $current_cat_id, $id );
+                echo '>' . esc_html($name) . '</option>';
             }
             echo '</select>';
             echo '<span class="plugin-cat-label" style="display:none;" data-category="' . esc_attr($cat_name) . '" data-cat-id="' . esc_attr($current_cat_id) . '"></span>';
@@ -61,13 +62,11 @@ class Simple_Plugin_Organizer {
     public function enqueue_plugin_category_script( $hook ) {
         if ( 'plugins.php' !== $hook ) return;
         
-        // Added jquery-ui-sortable dependency
-        wp_enqueue_script( 'plugin-cat-js', plugin_dir_url( __FILE__ ) . 'assets/js/plugin-categories.js', array('jquery', 'jquery-ui-sortable'), '3.0', true );
+        wp_enqueue_script( 'ext-or-cat-js', plugin_dir_url( __FILE__ ) . 'assets/js/plugin-categories.js', array('jquery', 'jquery-ui-sortable'), '3.0', true );
         
-        wp_localize_script( 'plugin-cat-js', 'pluginCatApp', array(
+        wp_localize_script( 'ext-or-cat-js', 'extOrCatApp', array(
             'ajax_url' => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'spo_ajax_nonce' ),
-            // Pass the ordered categories to JS so we render them in the exact saved order
+            'nonce'    => wp_create_nonce( 'ext_or_ajax_nonce' ),
             'ordered_cats' => get_option( $this->categories_option, array() )
         ));
     }
@@ -75,24 +74,29 @@ class Simple_Plugin_Organizer {
     public function add_category_views( $views ) {
         $categories  = get_option( $this->categories_option, array() );
         $plugin_cats = get_option( $this->plugin_cats_option, array() );
-        $current = isset( $_GET['plugin_status'] ) ? sanitize_text_field( $_GET['plugin_status'] ) : 'all';
+        
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $current = isset( $_GET['plugin_status'] ) ? sanitize_text_field( wp_unslash( $_GET['plugin_status'] ) ) : 'all';
 
         foreach ( $categories as $id => $name ) {
             $count = count( array_filter( $plugin_cats, function( $cat_id ) use ( $id ) { return $cat_id === $id; }) );
             if ( $count > 0 ) {
-                $class = ( $current === 'spo_cat_' . $id ) ? ' class="current"' : '';
-                $url   = admin_url( 'plugins.php?plugin_status=spo_cat_' . $id );
-                $views[ 'spo_cat_' . $id ] = sprintf( '<a href="%s"%s>%s <span class="count">(%d)</span></a>', esc_url( $url ), $class, esc_html( $name ), $count );
+                $class = ( $current === 'ext_or_cat_' . $id ) ? ' class="current"' : '';
+                $url   = admin_url( 'plugins.php?plugin_status=ext_or_cat_' . $id );
+                $views[ 'ext_or_cat_' . $id ] = sprintf( '<a href="%s"%s>%s <span class="count">(%d)</span></a>', esc_url( $url ), $class, esc_html( $name ), $count );
             }
         }
         return $views;
     }
 
     public function filter_plugins_by_category( $all_plugins ) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! isset( $_GET['plugin_status'] ) ) return $all_plugins;
-        $status = sanitize_text_field( $_GET['plugin_status'] );
-        if ( strpos( $status, 'spo_cat_' ) === 0 ) {
-            $cat_id      = str_replace( 'spo_cat_', '', $status );
+        
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $status = sanitize_text_field( wp_unslash( $_GET['plugin_status'] ) );
+        if ( strpos( $status, 'ext_or_cat_' ) === 0 ) {
+            $cat_id      = str_replace( 'ext_or_cat_', '', $status );
             $plugin_cats = get_option( $this->plugin_cats_option, array() );
             foreach ( $all_plugins as $plugin_file => $plugin_data ) {
                 if ( ! isset( $plugin_cats[ $plugin_file ] ) || $plugin_cats[ $plugin_file ] !== $cat_id ) {
@@ -106,31 +110,45 @@ class Simple_Plugin_Organizer {
     public function register_bulk_actions( $bulk_actions ) {
         $categories = get_option( $this->categories_option, array() );
         foreach ( $categories as $id => $name ) {
-            $bulk_actions[ 'spo_add_to_' . $id ] = 'Add to: ' . $name;
+            $bulk_actions[ 'ext_or_add_to_' . $id ] = 'Add to: ' . $name;
         }
         if ( ! empty( $categories ) ) {
-            $bulk_actions['spo_remove_cat'] = 'Remove from Category';
+            $bulk_actions['ext_or_remove_cat'] = 'Remove from Category';
         }
         return $bulk_actions;
     }
 
     public function handle_bulk_actions() {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! isset( $_REQUEST['checked'] ) || ! is_array( $_REQUEST['checked'] ) ) return;
-        $action = isset( $_REQUEST['action'] ) && $_REQUEST['action'] !== '-1' ? sanitize_text_field( $_REQUEST['action'] ) : false;
-        if ( ! $action && isset( $_REQUEST['action2'] ) && $_REQUEST['action2'] !== '-1' ) {
-            $action = sanitize_text_field( $_REQUEST['action2'] );
+
+        // Verify WordPress Core Bulk Action Nonce
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( ! isset( $_REQUEST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'bulk-plugins' ) ) return;
+
+        $action = false;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( isset( $_REQUEST['action'] ) && $_REQUEST['action'] !== '-1' ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $action = sanitize_text_field( wp_unslash( $_REQUEST['action'] ) );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        } elseif ( isset( $_REQUEST['action2'] ) && $_REQUEST['action2'] !== '-1' ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $action = sanitize_text_field( wp_unslash( $_REQUEST['action2'] ) );
         }
         if ( ! $action ) return;
 
         $plugin_cats = get_option( $this->plugin_cats_option, array() );
         $changed     = false;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $checked_plugins = array_map( 'sanitize_text_field', wp_unslash( $_REQUEST['checked'] ) );
 
-        if ( strpos( $action, 'spo_add_to_' ) === 0 ) {
-            $cat_id = str_replace( 'spo_add_to_', '', $action );
-            foreach ( $_REQUEST['checked'] as $plugin_file ) $plugin_cats[ $plugin_file ] = $cat_id;
+        if ( strpos( $action, 'ext_or_add_to_' ) === 0 ) {
+            $cat_id = str_replace( 'ext_or_add_to_', '', $action );
+            foreach ( $checked_plugins as $plugin_file ) $plugin_cats[ $plugin_file ] = $cat_id;
             $changed = true;
-        } elseif ( $action === 'spo_remove_cat' ) {
-            foreach ( $_REQUEST['checked'] as $plugin_file ) {
+        } elseif ( $action === 'ext_or_remove_cat' ) {
+            foreach ( $checked_plugins as $plugin_file ) {
                 if ( isset( $plugin_cats[ $plugin_file ] ) ) unset( $plugin_cats[ $plugin_file ] );
             }
             $changed = true;
@@ -146,11 +164,11 @@ class Simple_Plugin_Organizer {
     // --- AJAX HANDLERS ---
 
     public function ajax_add_category() {
-        check_ajax_referer( 'spo_ajax_nonce', 'nonce' );
+        check_ajax_referer( 'ext_or_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) || empty( $_POST['cat_name'] ) ) wp_send_json_error();
 
         $categories = get_option( $this->categories_option, array() );
-        $new_cat_name = sanitize_text_field( $_POST['cat_name'] );
+        $new_cat_name = sanitize_text_field( wp_unslash( $_POST['cat_name'] ) );
         $id = uniqid();
         
         $categories[$id] = $new_cat_name;
@@ -159,12 +177,12 @@ class Simple_Plugin_Organizer {
     }
 
     public function ajax_edit_category() {
-        check_ajax_referer( 'spo_ajax_nonce', 'nonce' );
+        check_ajax_referer( 'ext_or_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) || empty( $_POST['cat_id'] ) || empty( $_POST['cat_name'] ) ) wp_send_json_error();
 
         $categories = get_option( $this->categories_option, array() );
-        $id = sanitize_text_field( $_POST['cat_id'] );
-        $new_name = sanitize_text_field( $_POST['cat_name'] );
+        $id = sanitize_text_field( wp_unslash( $_POST['cat_id'] ) );
+        $new_name = sanitize_text_field( wp_unslash( $_POST['cat_name'] ) );
 
         if ( isset( $categories[$id] ) ) {
             $categories[$id] = $new_name;
@@ -175,11 +193,11 @@ class Simple_Plugin_Organizer {
     }
 
     public function ajax_delete_category() {
-        check_ajax_referer( 'spo_ajax_nonce', 'nonce' );
+        check_ajax_referer( 'ext_or_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) || empty( $_POST['cat_id'] ) ) wp_send_json_error();
 
         $categories = get_option( $this->categories_option, array() );
-        $id = sanitize_text_field( $_POST['cat_id'] );
+        $id = sanitize_text_field( wp_unslash( $_POST['cat_id'] ) );
 
         if ( isset( $categories[$id] ) ) {
             unset( $categories[$id] );
@@ -195,12 +213,12 @@ class Simple_Plugin_Organizer {
     }
 
     public function ajax_assign_plugin() {
-        check_ajax_referer( 'spo_ajax_nonce', 'nonce' );
+        check_ajax_referer( 'ext_or_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) || empty( $_POST['plugin_file'] ) ) wp_send_json_error();
 
         $plugin_cats = get_option( $this->plugin_cats_option, array() );
-        $plugin_file = sanitize_text_field( $_POST['plugin_file'] );
-        $cat_id = sanitize_text_field( $_POST['cat_id'] );
+        $plugin_file = sanitize_text_field( wp_unslash( $_POST['plugin_file'] ) );
+        $cat_id = isset( $_POST['cat_id'] ) ? sanitize_text_field( wp_unslash( $_POST['cat_id'] ) ) : '';
 
         if ( empty( $cat_id ) ) {
             unset( $plugin_cats[$plugin_file] );
@@ -212,22 +230,19 @@ class Simple_Plugin_Organizer {
         wp_send_json_success();
     }
 
-    // New Drag and Drop Sorting Method
     public function ajax_reorder_categories() {
-        check_ajax_referer( 'spo_ajax_nonce', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) || empty( $_POST['order'] ) ) wp_send_json_error();
+        check_ajax_referer( 'ext_or_ajax_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) || empty( $_POST['order'] ) || ! is_array( $_POST['order'] ) ) wp_send_json_error();
 
-        $order = array_map('sanitize_text_field', $_POST['order']);
+        $order = array_map( 'sanitize_text_field', wp_unslash( $_POST['order'] ) );
         $categories = get_option( $this->categories_option, array() );
         $new_categories = array();
 
-        // Rebuild the array in the new order
         foreach ($order as $id) {
             if (isset($categories[$id])) {
                 $new_categories[$id] = $categories[$id];
             }
         }
-        // Append any categories that might have been missed
         foreach ($categories as $id => $name) {
             if (!isset($new_categories[$id])) {
                 $new_categories[$id] = $name;
@@ -239,4 +254,4 @@ class Simple_Plugin_Organizer {
     }
 }
 
-new Simple_Plugin_Organizer();
+new EXT_OR_Simple_Plugin_Organizer();

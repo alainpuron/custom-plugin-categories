@@ -2,46 +2,64 @@ jQuery(document).ready(function($) {
     const pluginTable = $('.wp-list-table.plugins tbody');
     let categories = {};
 
-    // 1. Inject "Add Category" UI matching the screenshot
-    $('.subsubsub').wrap('<div class="spo-top-wrapper" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"></div>');
-    $('.spo-top-wrapper').append(`
-        <div class="spo-add-category-inline" style="background: #fff; border: 1px solid #c3c4c7; padding: 5px 10px; display: flex; align-items: center;">
-            <strong style="margin-right: 10px; font-weight: 500;">Add Category:</strong> 
-            <input type="text" id="spo-new-cat-name" placeholder="Name" style="margin: 0 10px 0 0; padding: 0 8px; min-height: 30px;" />
-            <button id="spo-add-cat-btn" class="button button-secondary" style="color: #2271b1; border-color: #2271b1;">Add</button>
-            <span id="spo-action-spinner" class="spinner" style="float: none; margin: 0 5px;"></span>
-        </div>
-    `);
+    // 1. Inject "Add Category" UI safely matching layout
+    if ($('.subsubsub').length && !$('.spo-add-category-inline').length) {
+        $('.subsubsub').wrap('<div class="spo-top-wrapper" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"></div>');
+        $('.spo-top-wrapper').append(`
+            <div class="spo-add-category-inline" style="background: #fff; border: 1px solid #c3c4c7; padding: 5px 10px; display: flex; align-items: center;">
+                <strong style="margin-right: 10px; font-weight: 500;">Add Category:</strong> 
+                <input type="text" id="spo-new-cat-name" placeholder="Name" style="margin: 0 10px 0 0; padding: 0 8px; min-height: 30px;" />
+                <button id="spo-add-cat-btn" class="button button-secondary" style="color: #2271b1; border-color: #2271b1;">Add</button>
+                <span id="spo-action-spinner" class="spinner" style="float: none; margin: 0 5px;"></span>
+            </div>
+        `);
+    }
 
-    // 2. Map all plugins to their categories
+    // 2. Pre-populate your tracking array with ALL saved database categories so empty ones show up
+    let orderedIds = (typeof extOrCatApp !== 'undefined' && extOrCatApp.ordered_cats) ? extOrCatApp.ordered_cats : {};
+    $.each(orderedIds, function(catId, catName) {
+        categories[catName] = { id: catId, rows: [] };
+    });
+    
+    // Always guarantee Uncategorized is tracked
+    if (!categories['Uncategorized']) {
+        categories['Uncategorized'] = { id: '', rows: [] };
+    }
+
+    // 3. Map all plugin rows to their assigned category buckets
     pluginTable.find('tr').each(function() {
         if ($(this).hasClass('no-items') || $(this).hasClass('plugin-update-tr')) return;
 
         let catLabel = $(this).find('.plugin-cat-label');
+        let catName = 'Uncategorized';
+        let catId = '';
+
         if (catLabel.length) {
-            let catName = catLabel.data('category');
-            let catId = catLabel.data('cat-id');
-            if (!categories[catName]) categories[catName] = { id: catId, rows: [] };
-            
-            let updateRow = $(this).next('.plugin-update-tr');
-            categories[catName].rows.push({ mainRow: $(this), updateRow: updateRow });
+            catName = catLabel.data('category') || 'Uncategorized';
+            catId = catLabel.data('cat-id') || '';
         }
+        
+        if (!categories[catName]) categories[catName] = { id: catId, rows: [] };
+        
+        let updateRow = $(this).next('.plugin-update-tr');
+        categories[catName].rows.push({ mainRow: $(this), updateRow: updateRow });
     });
 
-    // 3. Clear the table and reconstruct based on Saved Order
-    pluginTable.empty();
-    
-    // We use the ordered list from PHP to render headers in the correct order
-    let orderedIds = pluginCatApp.ordered_cats;
-    
-    // Render ordered categories first
-    $.each(orderedIds, function(catId, catName) {
-        if(categories[catName]) renderCategoryGroup(catName, categories[catName]);
-    });
+    // 4. Clear and reconstruct the table layout
+    if (Object.keys(categories).length > 0) {
+        pluginTable.empty();
+        
+        // Render saved categories in order
+        $.each(orderedIds, function(catId, catName) {
+            if(categories[catName]) {
+                renderCategoryGroup(catName, categories[catName]);
+            }
+        });
 
-    // Render "Uncategorized" at the absolute bottom
-    if (categories['Uncategorized']) {
-        renderCategoryGroup('Uncategorized', categories['Uncategorized']);
+        // Always render Uncategorized at the bottom if it contains elements
+        if (categories['Uncategorized'] && categories['Uncategorized'].rows.length > 0) {
+            renderCategoryGroup('Uncategorized', categories['Uncategorized']);
+        }
     }
 
     function renderCategoryGroup(catName, catData) {
@@ -70,6 +88,7 @@ jQuery(document).ready(function($) {
 
         pluginTable.append(headerRow);
 
+        // If the category has rows assigned, append them under the header
         $.each(catData.rows, function(index, rowData) {
             rowData.mainRow.attr('data-cat-group', catName);
             pluginTable.append(rowData.mainRow);
@@ -80,75 +99,74 @@ jQuery(document).ready(function($) {
         });
     }
 
-    // 4. Initialize Drag and Drop Sorting
-    pluginTable.sortable({
-        items: '.plugin-category-header:not(.uncategorized-header)',
-        handle: '.spo-drag-handle',
-        axis: 'y',
-        helper: function(e, tr) {
-            let originals = tr.children();
-            let helper = tr.clone();
-            helper.children().each(function(index) { $(this).width(originals.eq(index).width()); });
-            helper.css('background', '#f6f7f7'); // Highlight while dragging
-            return helper;
-        },
-        update: function(event, ui) {
-            let order = [];
-            
-            // Loop through all headers in their new DOM order
-            pluginTable.find('.plugin-category-header').each(function() {
-                let catName = $(this).find('.cat-title-text').text();
-                let catId = $(this).find('.edit-category').data('id');
+    // 5. Initialize Drag and Drop Sorting safely
+    if (typeof pluginTable.sortable === 'function') {
+        pluginTable.sortable({
+            items: '.plugin-category-header:not(.uncategorized-header)',
+            handle: '.spo-drag-handle',
+            axis: 'y',
+            helper: function(e, tr) {
+                let originals = tr.children();
+                let helper = tr.clone();
+                helper.children().each(function(index) { $(this).width(originals.eq(index).width()); });
+                helper.css('background', '#f6f7f7');
+                return helper;
+            },
+            update: function(event, ui) {
+                let order = [];
                 
-                if (catId) order.push(catId);
-                
-                // Immediately snap the plugin rows underneath their newly positioned header
-                let rows = $(`tr[data-cat-group="${catName}"]`);
-                $(this).after(rows);
-            });
+                pluginTable.find('.plugin-category-header').each(function() {
+                    let catName = $(this).find('.cat-title-text').text();
+                    let catId = $(this).find('.edit-category').data('id');
+                    
+                    if (catId) order.push(catId);
+                    
+                    let rows = $(`tr[data-cat-group="${catName}"]`);
+                    $(this).after(rows);
+                });
 
-            // Ensure Uncategorized and its rows stay firmly at the bottom
-            let uncatHeader = pluginTable.find('.uncategorized-header');
-            if(uncatHeader.length) {
-                pluginTable.append(uncatHeader);
-                pluginTable.append($(`tr[data-cat-group="Uncategorized"]`));
+                let uncatHeader = pluginTable.find('.uncategorized-header');
+                if(uncatHeader.length) {
+                    pluginTable.append(uncatHeader);
+                    pluginTable.append($(`tr[data-cat-group="Uncategorized"]`));
+                }
+
+                if (typeof extOrCatApp !== 'undefined') {
+                    $.post(extOrCatApp.ajax_url, {
+                        action: 'ext_or_reorder_categories',
+                        nonce: extOrCatApp.nonce,
+                        order: order
+                    });
+                }
             }
-
-            // Save order to database
-            $.post(pluginCatApp.ajax_url, {
-                action: 'spo_reorder_categories',
-                nonce: pluginCatApp.nonce,
-                order: order
-            });
-        }
-    });
+        });
+    }
 
     // --- EVENTS & AJAX ---
 
-    // Toggle Category Rows
     $(document).on('click', '.toggle-category', function() {
         let catName = $(this).siblings('.cat-title-text').text();
         $(`tr[data-cat-group="${catName}"]`).toggle();
         $(this).toggleClass('dashicons-arrow-down dashicons-arrow-right');
     });
 
-    // Inline Plugin Assignment
     $(document).on('change', '.spo-inline-assign', function() {
         let pluginFile = $(this).data('plugin');
         let catId = $(this).val();
         $(this).css('opacity', '0.5');
 
-        $.post(pluginCatApp.ajax_url, {
-            action: 'spo_assign_plugin',
-            nonce: pluginCatApp.nonce,
-            plugin_file: pluginFile,
-            cat_id: catId
-        }, function(response) {
-            if (response.success) location.reload();
-        });
+        if (typeof extOrCatApp !== 'undefined') {
+            $.post(extOrCatApp.ajax_url, {
+                action: 'ext_or_assign_plugin',
+                nonce: extOrCatApp.nonce,
+                plugin_file: pluginFile,
+                cat_id: catId
+            }, function(response) {
+                if (response.success) location.reload();
+            });
+        }
     });
 
-    // Add New Category
     $('#spo-add-cat-btn').on('click', function(e) {
         e.preventDefault();
         let catName = $('#spo-new-cat-name').val().trim();
@@ -156,44 +174,48 @@ jQuery(document).ready(function($) {
 
         $('#spo-action-spinner').addClass('is-active');
 
-        $.post(pluginCatApp.ajax_url, {
-            action: 'spo_add_category',
-            nonce: pluginCatApp.nonce,
-            cat_name: catName
-        }, function(response) {
-            if (response.success) location.reload();
-        });
-    });
-
-    // Edit Category Name
-    $(document).on('click', '.edit-category', function() {
-        let catId = $(this).data('id');
-        let currentName = $(this).data('name');
-        
-        let newName = prompt("Edit category name:", currentName);
-        if (newName !== null && newName.trim() !== "" && newName !== currentName) {
-            $.post(pluginCatApp.ajax_url, {
-                action: 'spo_edit_category',
-                nonce: pluginCatApp.nonce,
-                cat_id: catId,
-                cat_name: newName.trim()
+        if (typeof extOrCatApp !== 'undefined') {
+            $.post(extOrCatApp.ajax_url, {
+                action: 'ext_or_add_category',
+                nonce: extOrCatApp.nonce,
+                cat_name: catName
             }, function(response) {
                 if (response.success) location.reload();
             });
         }
     });
 
-    // Delete Category
+    $(document).on('click', '.edit-category', function() {
+        let catId = $(this).data('id');
+        let currentName = $(this).data('name');
+        
+        let newName = prompt("Edit category name:", currentName);
+        if (newName !== null && newName.trim() !== "" && newName !== currentName) {
+            if (typeof extOrCatApp !== 'undefined') {
+                $.post(extOrCatApp.ajax_url, {
+                    action: 'ext_or_edit_category',
+                    nonce: extOrCatApp.nonce,
+                    cat_id: catId,
+                    cat_name: newName.trim()
+                }, function(response) {
+                    if (response.success) location.reload();
+                });
+            }
+        }
+    });
+
     $(document).on('click', '.delete-category', function() {
         if (!confirm("Are you sure you want to delete this category? (Plugins will just be moved to Uncategorized).")) return;
         let catId = $(this).data('id');
 
-        $.post(pluginCatApp.ajax_url, {
-            action: 'spo_delete_category',
-            nonce: pluginCatApp.nonce,
-            cat_id: catId
-        }, function(response) {
-            if (response.success) location.reload();
-        });
+        if (typeof extOrCatApp !== 'undefined') {
+            $.post(extOrCatApp.ajax_url, {
+                action: 'ext_or_delete_category',
+                nonce: extOrCatApp.nonce,
+                cat_id: catId
+            }, function(response) {
+                if (response.success) location.reload();
+            });
+        }
     });
 });
